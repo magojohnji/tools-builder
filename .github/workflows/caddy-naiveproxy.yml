@@ -5,14 +5,12 @@ defaults:
   run:
     shell: bash
 jobs:
-  build_caddy_with_naive:
+  build:
     runs-on: ubuntu-latest
     container:
       image: debian:latest
-    env:
-      BUNDLE: caddy-forwardproxy-naive
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@latest
 
       - name: Install dependences
         run: |
@@ -20,36 +18,35 @@ jobs:
           apt-get upgrade -y
           apt-get install -y build-essential git sudo wget curl 
       
-      - uses: actions/setup-go@v6
+      - name: Setup Go
+        uses: actions/setup-go@latest
         with:
           go-version: 'stable'
           check-latest: true
           
-      - run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-      
-      - run: ~/go/bin/xcaddy build --with github.com/caddyserver/forwardproxy=github.com/klzgrad/forwardproxy@naive
-      
+      - name: Build Caddy
+        run: |
+          go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+          ~/go/bin/xcaddy build --with github.com/caddyserver/forwardproxy=github.com/klzgrad/forwardproxy@naive
+
       - name: Pack naiveproxy assets
         run: |
-          mkdir artifact
-          cp caddy artifact/
-          tar czf artifact.tar.gz artifact
+          tar czf caddy-bin.tar.gz caddy
           openssl sha256 ./caddy >sha256sum.txt
-          echo "SHA256SUM=$(cut -d' ' -f2 sha256sum.txt)" >>$GITHUB_ENV
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@latest
         with:
           path: |
             sha256sum.txt
-            artifact.tar.gz
+            caddy-bin.tar.gz
           
       - name: Release
-        uses: softprops/action-gh-release@v2.3.2
+        uses: softprops/action-gh-release@latest
         with:
           tag_name: "Caddy(naiveproxy)-BUILD_${{ env.DATE }}"
           draft: false
           prerelease: false
           files: |
             sha256sum.txt
-            artifact.tar.gz
+            caddy-bin.tar.gz

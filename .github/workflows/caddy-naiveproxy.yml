@@ -13,6 +13,11 @@ jobs:
       BUNDLE: caddy-forwardproxy-naive
     steps:
       - uses: actions/checkout@v5
+
+      - run: |
+          apt-get update
+          apt-get upgrade
+          apt-get install -y build-essential git sudo wget curl 
       
       - uses: actions/setup-go@v6
         with:

@@ -1,4 +1,4 @@
-name: Build
+name: Caddy with NaiveProxy
 on:
   workflow_dispatch:
 defaults:

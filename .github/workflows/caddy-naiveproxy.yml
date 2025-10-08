@@ -38,7 +38,7 @@ jobs:
           echo "SHA256SUM=$(cut -d' ' -f2 sha256sum.txt)" >>$GITHUB_ENV
 
       - name: Upload artifacts
-      - uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4
         with:
           path: |
             sha256sum.txt

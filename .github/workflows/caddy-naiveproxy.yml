@@ -10,16 +10,16 @@ jobs:
     container:
       image: debian:latest
     steps:
-      - uses: actions/checkout@latest
+      - uses: actions/checkout@v5
 
-      - name: Install dependences
+      - name: Install dependencies
         run: |
           apt-get update
           apt-get upgrade -y
           apt-get install -y build-essential git sudo wget curl 
       
       - name: Setup Go
-        uses: actions/setup-go@latest
+        uses: actions/setup-go@v6
         with:
           go-version: 'stable'
           check-latest: true
@@ -35,14 +35,17 @@ jobs:
           openssl sha256 ./caddy >sha256sum.txt
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@latest
+        uses: actions/upload-artifact@v4
         with:
           path: |
             sha256sum.txt
             caddy-bin.tar.gz
+
+      - name: Set TAG_NAME with UTC date
+        run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
           
       - name: Release
-        uses: softprops/action-gh-release@latest
+        uses: softprops/action-gh-release@v2.3.2
         with:
           tag_name: "Caddy(naiveproxy)-BUILD_${{ env.DATE }}"
           draft: false

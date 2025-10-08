@@ -86,13 +86,13 @@ jobs:
         run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@latest
         with:
           name: "BUILD ${{ env.DATE }}"
           path: nginx-built.tar.gz
 
       - name: Release
-        uses: softprops/action-gh-release@v2.3.2
+        uses: softprops/action-gh-release@latest
         with:
           tag_name: "NGINX(OpenSSL)-BUILD_${{ env.DATE }}"
           draft: false

@@ -61,7 +61,7 @@ jobs:
       - name: Build Nginx
         run: |
           cd ../nginx
-          ./auto/configure 
+          ./auto/configure \
             --prefix=/usr/local/nginx \
             --with-compat \
             --with-file-aio \

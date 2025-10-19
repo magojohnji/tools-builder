@@ -27,9 +27,11 @@ jobs:
       - name: Build Caddy
         run: |
           go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-          ~/go/bin/xcaddy build --with github.com/caddyserver/forwardproxy=github.com/klzgrad/forwardproxy@naive
+          ~/go/bin/xcaddy build \
+            --with github.com/caddyserver/forwardproxy=github.com/klzgrad/forwardproxy@naive \
+            --with github.com/caddy-dns/cloudflare
 
-      - name: Pack naiveproxy assets
+      - name: Pack Caddy assets
         run: |
           tar czf caddy-bin.tar.gz caddy
           openssl sha256 ./caddy >sha256sum.txt
@@ -51,5 +53,4 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            sha256sum.txt
             caddy-bin.tar.gz

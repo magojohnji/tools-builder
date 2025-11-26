@@ -1,4 +1,4 @@
-name: Build Arti (dynamic)
+name: Arti
 
 on:
   workflow_dispatch:
@@ -17,9 +17,13 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build arti (dynamic)
+      - name: Get arti source
+        run: git clone https://gitlab.torproject.org/tpo/core/arti.git
+
+      - name: Build arti
         run: |
-          cargo build --release -p arti
+          cd arti
+          cargo build -p arti --release
 
       - name: List outputs
         run: ls -lah target/release/
@@ -27,8 +31,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: arti-dynamic
+          name: arti
           path: |
-            target/release/arti
-            target/release/arti-client
-            target/release/tor-*
+            target/release

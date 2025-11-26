@@ -1,0 +1,34 @@
+name: Build Arti (dynamic)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y pkg-config libssl-dev sudo curl wget
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build arti (dynamic)
+        run: |
+          cargo build --release -p arti
+
+      - name: List outputs
+        run: ls -lah target/release/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arti-dynamic
+          path: |
+            target/release/arti
+            target/release/arti-client
+            target/release/tor-*

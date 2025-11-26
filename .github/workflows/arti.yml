@@ -25,9 +25,19 @@ jobs:
           cd arti
           cargo build -p arti --release
 
+      - name: Set TAG_NAME with UTC date
+        run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: arti
-          path: |
-            arti
+          name: BUILD ${{ env.DATE }}
+          path: arti/target/release/arti
+
+      - name: Release
+        uses: softprops/action-gh-release@v2.3.2
+        with:
+          tag_name: "arti-BUILD_${{ env.DATE }}"
+          draft: false
+          prerelease: false
+          files: arti/target/release/arti

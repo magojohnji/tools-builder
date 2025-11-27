@@ -23,7 +23,7 @@ jobs:
       - name: Build arti
         run: |
           cd arti
-          cargo build -p arti --release
+          cargo build --features rustls -p arti --release
 
       - name: Set TAG_NAME with UTC date
         run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV

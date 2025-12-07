@@ -63,6 +63,7 @@ jobs:
           cd ../nginx
           ./auto/configure \
             --prefix=/usr/local/nginx \
+            --with-pcre \
             --with-compat \
             --with-file-aio \
             --with-threads \
@@ -78,7 +79,9 @@ jobs:
             --with-stream_ssl_module \
             --with-stream_ssl_preread_module \
             --with-openssl=../openssl \
-            --with-openssl-opt="enable-ktls"
+            --with-openssl-opt="enable-ktls" \
+            --with-cc-opt="-static -O2" \
+            --with-ld-opt="-static -Wl,--as-needed"
           make -j$(nproc)
           sudo make install
 

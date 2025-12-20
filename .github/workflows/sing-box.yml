@@ -1,4 +1,4 @@
-name: Build sing-box
+name: sing-box
 
 on:
   workflow_dispatch:
@@ -13,15 +13,16 @@ jobs:
     runs-on: ubuntu-latest
     container: debian:latest
     strategy:
+      fail-fast: false
       matrix:
         type: [server, client]
     steps:
       - name: Install dependencies
         run: |
           apt-get update -y
-          apt-get install -y git aria2 wget tar curl build-essential musl-tools unzip
+          apt-get install -y git aria2 wget tar curl build-essential musl-tools unzip python3
 
-      - uses: actions/setup-go@v6 
+      - uses: actions/setup-go@v6
         with: 
           go-version: 'stable'
 

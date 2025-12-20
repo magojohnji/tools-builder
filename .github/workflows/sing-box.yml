@@ -21,7 +21,7 @@ jobs:
         run: |
           apt-get update -y
           apt-get install -y git aria2 wget tar curl build-essential musl-tools unzip python3
-          pip3 install requests --break-system-packages
+          pip install requests --break-system-packages
 
       - uses: actions/setup-go@v6
         with: 

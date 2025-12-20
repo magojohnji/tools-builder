@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     container: debian:bookworm
     strategy:
+      fail-fast: false
       matrix:
         type: [server, client]
     steps:

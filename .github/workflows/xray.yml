@@ -1,0 +1,56 @@
+name: Xray Core
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Optional tag name to build from (e.g., 1.8.0). If empty, clones from main branch.'
+        required: false
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        platform: [windows-amd64, darwin-arm64, linux-amd64]
+    runs-on: ubuntu-latest
+    container: debian:latest
+    env:
+      CGO_ENABLED: 0
+    steps:
+      - name: Install aria2
+        run: sudo apt update && sudo apt install -y aria2
+
+      - name: Fetch source code
+        run: |
+          if [ -z "${{ inputs.tag }}" ]; then
+            git clone https://github.com/XTLS/Xray-core.git
+            cd Xray-core
+            git checkout main
+          else
+            aria2c "https://github.com/XTLS/Xray-core/archive/refs/tags/v${{ inputs.tag }}.tar.gz" -o source.tar.gz
+            tar xzf source.tar.gz
+            mv Xray-core-v${{ inputs.tag }} Xray-core
+            cd Xray-core
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: Xray-core/go.mod
+          check-latest: true
+
+      - name: Build Xray
+        working-directory: Xray-core
+        env:
+          GOOS: ${{ matrix.platform == 'windows-amd64' && 'windows' || matrix.platform == 'darwin-arm64' && 'darwin' || 'linux' }}
+          GOARCH: ${{ matrix.platform == 'windows-amd64' && 'amd64' || matrix.platform == 'darwin-arm64' && 'arm64' || 'amd64' }}
+          EXT: ${{ matrix.platform == 'windows-amd64' && '.exe' || '' }}
+        run: |
+          go mod download
+          go build -o xray${EXT} -trimpath -ldflags "-s -w -buildid=" ./main
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xray-${{ matrix.platform }}
+          path: Xray-core/xray${{ matrix.platform == 'windows-amd64' && '.exe' || '' }}

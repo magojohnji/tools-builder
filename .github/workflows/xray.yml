@@ -18,7 +18,7 @@ jobs:
       GOARCH: amd64
     steps:
       - name: Install aria2
-        run: sudo apt update && sudo apt install -y aria2
+        run: apt-get update && apt-get install -y aria2
 
       - name: Fetch source code
         run: |

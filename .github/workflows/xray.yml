@@ -6,16 +6,16 @@ on:
       tag:
         description: 'Optional tag name to build from (e.g., 1.8.0). If empty, clones from main branch.'
         required: false
+        default: ''
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        platform: [windows-amd64, darwin-arm64, linux-amd64]
+  build-linux:
     runs-on: ubuntu-latest
     container: debian:latest
     env:
       CGO_ENABLED: 0
+      GOOS: linux
+      GOARCH: amd64
     steps:
       - name: Install aria2
         run: sudo apt update && sudo apt install -y aria2
@@ -23,10 +23,12 @@ jobs:
       - name: Fetch source code
         run: |
           if [ -z "${{ inputs.tag }}" ]; then
+            echo "No tag provided, cloning from main branch..."
             git clone https://github.com/XTLS/Xray-core.git
             cd Xray-core
             git checkout main
           else
+            echo "Tag provided: ${{ inputs.tag }}, downloading source archive..."
             aria2c "https://github.com/XTLS/Xray-core/archive/refs/tags/v${{ inputs.tag }}.tar.gz" -o source.tar.gz
             tar xzf source.tar.gz
             mv Xray-core-v${{ inputs.tag }} Xray-core
@@ -39,18 +41,14 @@ jobs:
           go-version-file: Xray-core/go.mod
           check-latest: true
 
-      - name: Build Xray
+      - name: Build Xray (Linux amd64)
         working-directory: Xray-core
-        env:
-          GOOS: ${{ matrix.platform == 'windows-amd64' && 'windows' || matrix.platform == 'darwin-arm64' && 'darwin' || 'linux' }}
-          GOARCH: ${{ matrix.platform == 'windows-amd64' && 'amd64' || matrix.platform == 'darwin-arm64' && 'arm64' || 'amd64' }}
-          EXT: ${{ matrix.platform == 'windows-amd64' && '.exe' || '' }}
         run: |
           go mod download
-          go build -o xray${EXT} -trimpath -ldflags "-s -w -buildid=" ./main
+          go build -o xray -trimpath -ldflags "-s -w -buildid=" ./main
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: xray-${{ matrix.platform }}
-          path: Xray-core/xray${{ matrix.platform == 'windows-amd64' && '.exe' || '' }}
+          name: xray-linux-amd64
+          path: Xray-core/xray

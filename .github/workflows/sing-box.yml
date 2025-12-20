@@ -1,0 +1,65 @@
+name: Build sing-box
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name (leave empty to use dev-next branch)'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: debian:latest
+    strategy:
+      matrix:
+        type: [server, client]
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update -y
+          apt-get install -y git aria2 wget tar curl build-essential musl-tools unzip
+
+      - uses: actions/setup-go@v6 
+        with: 
+          go-version: 'stable'
+
+      - name: Download sing-box source
+        run: |
+          if [ -z "${{ inputs.tag }}" ]; then
+            git clone https://github.com/SagerNet/sing-box.git -b dev-next
+          else
+            aria2c -x 16 -s 16 https://github.com/SagerNet/sing-box/archive/refs/tags/${{ inputs.tag }}.tar.gz -o sing-box.tar.gz
+            tar -xzf sing-box.tar.gz
+            mv sing-box-* sing-box
+          fi
+
+      - name: Setup cronet-go toolchain for client
+        if: matrix.type == 'client'
+        run: |
+          git clone --recursive --depth=1 https://github.com/sagernet/cronet-go.git
+          cd cronet-go
+          go run ./cmd/build-naive --target=linux/amd64 --libc=musl download-toolchain
+          export $(go run ./cmd/build-naive --target=linux/amd64 --libc=musl env)
+          echo "export CC=$CC" >> $GITHUB_ENV
+          echo "export CXX=$CXX" >> $GITHUB_ENV
+          # Add other env vars as needed
+          cd ..
+
+      - name: Build sing-box
+        run: |
+          cd sing-box
+          if [ "${{ matrix.type }}" == "server" ]; then
+            TAGS="with_quic,with_utls"
+            CGO_ENABLED=0 go build -tags "$TAGS,osusergo,netgo" -ldflags "-s -w -linkmode external -extldflags '-static'" -o sing-box-server ./cmd/sing-box
+          else
+            TAGS="with_quic,with_utls,with_gvisor,with_naive_outbound,with_musl"
+            CGO_ENABLED=1 go build -tags "$TAGS" -ldflags "-s -w -linkmode external -extldflags '-static'" -o sing-box-client ./cmd/sing-box
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-${{ matrix.type }}
+          path: sing-box/sing-box-${{ matrix.type }}

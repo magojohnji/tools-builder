@@ -43,21 +43,29 @@ jobs:
           fetch-depth: 0
 
       - name: Get Version & Dependency Info
-        id: info
-        run: |
-          # 1. 确定 sing-box 版本
-          if [ -z "${{ github.event.inputs.tag_name }}" ]; then
-            VERSION=$(git describe --tags --always)
-          else
-            VERSION="${{ github.event.inputs.tag_name }}"
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          
-          # 2. 从 go.mod 提取 cronet-go 的版本 (关键步骤)
-          # 这样可以保证下载的 C++ 库与 Go 代码完全匹配
-          CRONET_VERSION=$(grep 'github.com/sagernet/cronet-go' go.mod | awk '{print $2}')
-          echo "CRONET_VERSION=$CRONET_VERSION" >> $GITHUB_OUTPUT
-          echo "Detected cronet-go version: $CRONET_VERSION"
+              id: info
+              run: |
+                # 确保有 tag 信息
+                git fetch --tags --force
+                
+                if [ -z "${{ github.event.inputs.tag_name }}" ]; then
+                  # 如果没有输入 tag，则尝试获取最近的 tag，失败则使用 commit hash
+                  VERSION=$(git describe --tags --always || git rev-parse --short HEAD)
+                else
+                  VERSION="${{ github.event.inputs.tag_name }}"
+                fi
+      
+                # 提取 cronet 版本
+                CRONET_VERSION=$(grep 'github.com/sagernet/cronet-go' go.mod | awk '{print $2}' | tr -d '\r\n')
+      
+                # 安全写入输出
+                {
+                  echo "VERSION=$VERSION"
+                  echo "CRONET_VERSION=$CRONET_VERSION"
+                } >> "$GITHUB_OUTPUT"
+                
+                echo "Build Version: $VERSION"
+                echo "Cronet Version: $CRONET_VERSION"
 
       - name: Setup Go
         uses: actions/setup-go@v5

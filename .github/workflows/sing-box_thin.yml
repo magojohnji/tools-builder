@@ -4,25 +4,25 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: '要编译的 Tag (例如 v1.8.0)。留空则自动获取最新版本'
+        description: 'Tag to build (e.g., v1.13.0-rc.4). Leave empty to fetch the latest stable.'
         required: false
         default: ''
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    container:
+      image: debian:latest
     steps:
       - name: Get Target Tag
         id: get_tag
         run: |
           if [ "${{ github.event.inputs.tag_name }}" != "" ]; then
             SELECTED_TAG="${{ github.event.inputs.tag_name }}"
-            echo "使用手动指定的 Tag: $SELECTED_TAG"
+            echo "Using manually specified tag: $SELECTED_TAG"
           else
-            # 访问 GitHub API 获取最新 Release 的 Tag 名称
             SELECTED_TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
-            echo "检测到最新 Tag: $SELECTED_TAG"
+            echo "Latest Stable Tag: $SELECTED_TAG"
           fi
           echo "tag=$SELECTED_TAG" >> $GITHUB_OUTPUT
 
@@ -57,3 +57,14 @@ jobs:
         with:
           name: sing-box-${{ steps.get_tag.outputs.tag }}-linux-amd64
           path: sing-box-linux-amd64
+
+      - name: Set TAG_NAME with UTC date
+        run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
+          
+      - name: Release
+        uses: softprops/action-gh-release@v2.3.2
+        with:
+          tag_name: "sing-box_thin-BUILD_${{ env.DATE }}"
+          draft: false
+          prerelease: false
+          files: sing-box-linux-amd64

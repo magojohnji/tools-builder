@@ -1,0 +1,144 @@
+name: sing-box Full
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag to build (e.g., v1.11.0). Leave empty for latest.'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux AMD64 (Static/Musl logic) - 实现 "Fused" 的最佳方案
+          - goos: linux
+            goarch: amd64
+            goamd64: v1
+            output_name: sing-box-linux-amd64-fused
+            # 强制静态链接
+            ldflags: -linkmode external -extldflags "-static -lpthread -lm -lstdc++"
+            # 对应官方 musl 逻辑，使用 standard tags + naive
+            tags: with_gvisor,with_quic,with_dhcp,with_wireguard,with_ech,with_utls,with_clash_api,with_naive_outbound
+
+          # Windows AMD64
+          - goos: windows
+            goarch: amd64
+            goamd64: v1
+            output_name: sing-box-windows-amd64-fused.exe
+            # Windows 下尝试静态链接较为复杂，这里使用 MinGW 的静态参数
+            ldflags: -linkmode external -extldflags "-static -static-libgcc -static-libstdc++"
+            tags: with_gvisor,with_quic,with_dhcp,with_wireguard,with_ech,with_utls,with_clash_api,with_naive_outbound
+
+    steps:
+      - name: Checkout sing-box
+        uses: actions/checkout@v4
+        with:
+          repository: SagerNet/sing-box
+          ref: ${{ github.event.inputs.tag_name }}
+          fetch-depth: 0
+
+      - name: Get Version & Dependency Info
+        id: info
+        run: |
+          # 1. 确定 sing-box 版本
+          if [ -z "${{ github.event.inputs.tag_name }}" ]; then
+            VERSION=$(git describe --tags --always)
+          else
+            VERSION="${{ github.event.inputs.tag_name }}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          
+          # 2. 从 go.mod 提取 cronet-go 的版本 (关键步骤)
+          # 这样可以保证下载的 C++ 库与 Go 代码完全匹配
+          CRONET_VERSION=$(grep 'github.com/sagernet/cronet-go' go.mod | awk '{print $2}')
+          echo "CRONET_VERSION=$CRONET_VERSION" >> $GITHUB_OUTPUT
+          echo "Detected cronet-go version: $CRONET_VERSION"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          check-latest: true
+
+      - name: Setup MinGW-w64 (For Windows Build)
+        if: matrix.goos == 'windows'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64
+
+      - name: Prepare Cronet Static Libraries
+        run: |
+          mkdir -p cronet-lib
+          cd cronet-lib
+          
+          CRONET_VER="${{ steps.info.outputs.CRONET_VERSION }}"
+          OS="${{ matrix.goos }}"
+          ARCH="${{ matrix.goarch }}"
+          
+          echo "Downloading Cronet assets for $OS/$ARCH @ $CRONET_VER..."
+          
+          # 构建下载 URL (基于 SagerNet/cronet-go 的 Release 命名规则)
+          # 注意：为了实现 Fused，我们需要 Header 和 Static Lib (.a)
+          
+          # 1. 下载头文件 (Common)
+          curl -L -o include.tar.gz "https://github.com/SagerNet/cronet-go/releases/download/$CRONET_VER/cronet-linux-amd64-include.tar.gz"
+          tar -xzf include.tar.gz
+          
+          # 2. 下载静态库
+          if [ "$OS" == "linux" ]; then
+            # 下载 Linux 静态库
+            curl -L -o lib.tar.gz "https://github.com/SagerNet/cronet-go/releases/download/$CRONET_VER/cronet-linux-amd64-static.tar.gz"
+            tar -xzf lib.tar.gz
+            # 移动 .a 文件到当前目录方便引用
+            find . -name "libcronet.a" -exec mv {} . \;
+          
+          elif [ "$OS" == "windows" ]; then
+            # Windows 通常很难找到纯静态 .a/.lib，尝试下载 standard 包
+            # 注意：如果官方 release 没有提供 windows-static，这里可能会失败或只能回退到动态链接
+            curl -L -o lib.tar.gz "https://github.com/SagerNet/cronet-go/releases/download/$CRONET_VER/cronet-windows-amd64.tar.gz"
+            tar -xzf lib.tar.gz
+            # Windows 交叉编译通常需要 .syso 或 .a
+            # 尝试寻找静态库，如果找不到，后续编译可能会报错
+            find . -name "*.a" -exec mv {} . \; || true
+            find . -name "*.lib" -exec mv {} . \; || true
+          fi
+          
+          echo "Cronet setup complete. Content of lib dir:"
+          ls -R
+
+      - name: Build Binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOAMD64: ${{ matrix.goamd64 }}
+          CGO_ENABLED: 1 # 必须开启 CGO
+          TAGS: ${{ matrix.tags }}
+          VERSION: ${{ steps.info.outputs.VERSION }}
+        run: |
+          # 配置 CGO 路径
+          export CGO_CFLAGS="-I$(pwd)/cronet-lib/include"
+          export CGO_LDFLAGS="-L$(pwd)/cronet-lib"
+          
+          # 针对 Windows 设置交叉编译器
+          if [ "$GOOS" == "windows" ]; then
+            export CC="x86_64-w64-mingw32-gcc"
+            export CXX="x86_64-w64-mingw32-g++"
+          fi
+          
+          echo "Building with Tags: $TAGS"
+          
+          go build -v -tags "$TAGS" \
+            -ldflags "-X github.com/sagernet/sing-box/constant.Version=$VERSION -s -w -buildid= ${{ matrix.ldflags }}" \
+            -o ${{ matrix.output_name }} \
+            ./cmd/sing-box
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output_name }}
+          path: ${{ matrix.output_name }}

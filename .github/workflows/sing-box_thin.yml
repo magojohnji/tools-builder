@@ -44,6 +44,10 @@ jobs:
           GOARCH: amd64
           CGO_ENABLED: 0
         run: |
+          apt update
+          apt upgrade
+          apt install sudo git make build-essential wget curl 
+          
           VERSION=${{ steps.get_tag.outputs.tag }}
           TAGS="with_quic with_acme"
           

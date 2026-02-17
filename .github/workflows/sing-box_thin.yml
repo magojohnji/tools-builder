@@ -1,0 +1,59 @@
+name: sing-box Thin
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: '要编译的 Tag (例如 v1.8.0)。留空则自动获取最新版本'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get Target Tag
+        id: get_tag
+        run: |
+          if [ "${{ github.event.inputs.tag_name }}" != "" ]; then
+            SELECTED_TAG="${{ github.event.inputs.tag_name }}"
+            echo "使用手动指定的 Tag: $SELECTED_TAG"
+          else
+            # 访问 GitHub API 获取最新 Release 的 Tag 名称
+            SELECTED_TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
+            echo "检测到最新 Tag: $SELECTED_TAG"
+          fi
+          echo "tag=$SELECTED_TAG" >> $GITHUB_OUTPUT
+
+      - name: Checkout sing-box
+        uses: actions/checkout@v6
+        with:
+          repository: SagerNet/sing-box
+          ref: ${{ steps.get_tag.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          
+      - name: Build Binary
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: 0
+        run: |
+          VERSION=${{ steps.get_tag.outputs.tag }}
+          TAGS="with_quic with_acme"
+          
+          go build -v -tags "$TAGS" \
+            -ldflags "-X github.com/sagernet/sing-box/constant.Version=$VERSION -s -w -buildid=" \
+            -o sing-box-linux-amd64 \
+            ./cmd/sing-box
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-${{ steps.get_tag.outputs.tag }}-linux-amd64
+          path: sing-box-linux-amd64

@@ -18,7 +18,7 @@ jobs:
         run: |
           apt -y update
           apt -y upgrade
-          apt install -y sudo git make build-essential wget curl
+          apt install -y sudo git make build-essential wget curl python3
 
       - name: Checkout sing-box
         uses: actions/checkout@v6

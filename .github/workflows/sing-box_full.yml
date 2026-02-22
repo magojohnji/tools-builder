@@ -1,9 +1,9 @@
-name: sing-box client
+name: sing-box Client
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version name"
+        description: "Release version name, for example: 1.13.0-rc.5"
         required: true
         type: string
 

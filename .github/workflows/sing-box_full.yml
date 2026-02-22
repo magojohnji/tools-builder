@@ -11,15 +11,7 @@ jobs:
   build:
     name: Build Linux x86_64 musl binary
     runs-on: ubuntu-latest
-    container:
-      image: debian:latest
     steps:
-      - name: Install Dependence
-        run: |
-          apt -y update
-          apt -y upgrade
-          apt install -y sudo git make build-essential wget curl python3
-
       - name: Checkout sing-box
         uses: actions/checkout@v6
         with:

@@ -108,6 +108,7 @@ jobs:
       - name: Build
         run: |
           set -xeuo pipefail
+          cd "${{ github.workspace }}"
           mkdir -p dist
           go build -v -trimpath -o dist/sing-box -tags "${BUILD_TAGS}" \
           -ldflags '-s -buildid= -X github.com/sagernet/sing-box/constant.Version=${{ needs.calculate_version.outputs.version }} -X internal/godebug.defaultGODEBUG=multipathtcp=0 -checklinkname=0' \
@@ -171,6 +172,8 @@ jobs:
           ${{ secrets.GPG_KEY }}
           EOF
           rpmsign --addsign dist/*.rpm
+      - name: Cleanup
+        run: rm dist/sing-box
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

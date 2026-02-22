@@ -1,5 +1,4 @@
-name: sing-box Full
-
+name: sing-box Client
 on:
   workflow_dispatch:
     inputs:
@@ -12,11 +11,20 @@ jobs:
   build:
     name: Build Linux x86_64 musl binary
     runs-on: ubuntu-latest
+    container:
+      image: debian:latest
     steps:
+      - name: Install Dependence
+        run: |
+          apt -y update
+          apt -y upgrade
+          apt install -y sudo git make build-essential wget curl
+
       - name: Checkout sing-box
         uses: actions/checkout@v6
         with:
           repository: SagerNet/sing-box
+          ref: v${{ inputs.version }}
           fetch-depth: 0
 
       - name: Setup Go
@@ -60,7 +68,7 @@ jobs:
       - name: Set build tags
         run: |
           set -xeuo pipefail
-          TAGS='with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale,with_ccm,with_ocm,badlinkname,tfogo_checklinkname0,with_naive_outbound,with_musl'
+          TAGS='with_quic,with_naive_outbound,with_musl'
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
 
       - name: Build

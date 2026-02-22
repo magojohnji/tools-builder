@@ -56,7 +56,6 @@ jobs:
           cd ~/cronet-go
           go run ./cmd/build-naive --target=linux/amd64 --libc=musl env >> $GITHUB_ENV
 
-
       - name: Set build tags
         run: |
           set -xeuo pipefail

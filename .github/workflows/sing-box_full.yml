@@ -16,11 +16,11 @@ jobs:
       version: ${{ steps.outputs.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ~1.25.7
       - name: Check input version
@@ -44,11 +44,11 @@ jobs:
       - calculate_version
     steps:
       - name: Checkout
-        uses: actions/checkout@5 # v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ~1.25.7
       - name: Clone cronet-go
@@ -62,7 +62,7 @@ jobs:
           git -C ~/cronet-go submodule update --init --recursive --depth=1
       - name: Cache Chromium toolchain
         id: cache-chromium-toolchain
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/cronet-go/naiveproxy/src/third_party/llvm-build/
@@ -108,10 +108,6 @@ jobs:
         if: (! contains(needs.calculate_version.outputs.version, '-')) && !inputs.forceBeta
         run: |-
           echo "NAME=sing-box" >> "$GITHUB_ENV"
-      - name: Set beta name
-        if: contains(needs.calculate_version.outputs.version, '-') || inputs.forceBeta
-        run: |-
-          echo "NAME=sing-box-beta" >> "$GITHUB_ENV"
       - name: Set version
         run: |-
           PKG_VERSION="${{ needs.calculate_version.outputs.version }}"
@@ -125,7 +121,7 @@ jobs:
       - build
     steps:
       - name: Checkout
-        uses: actions/checkout@5
+        uses: actions/checkout@6
         with:
           fetch-depth: 0
       - name: Set tag
@@ -134,7 +130,7 @@ jobs:
           git tag v${{ needs.calculate_version.outputs.version }} -f
           echo "VERSION=${{ needs.calculate_version.outputs.version }}" >> "$GITHUB_ENV"
       - name: Download builds
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true

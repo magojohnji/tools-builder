@@ -1,12 +1,11 @@
-name: sing-box Thin
-
+name: sing-box Server
 on:
   workflow_dispatch:
     inputs:
-      tag_name:
-        description: 'Tag to build (e.g., v1.13.0-rc.4). Leave empty to fetch the latest stable.'
-        required: false
-        default: ''
+      version:
+        description: "Release version name, for example: 1.13.0-rc.5"
+        required: true
+        type: string
 
 jobs:
   build:
@@ -14,23 +13,11 @@ jobs:
     container:
       image: debian:latest
     steps:
-      - name: Get Target Tag
-        id: get_tag
-        run: |
-          if [ "${{ github.event.inputs.tag_name }}" != "" ]; then
-            SELECTED_TAG="${{ github.event.inputs.tag_name }}"
-            echo "Using manually specified tag: $SELECTED_TAG"
-          else
-            SELECTED_TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
-            echo "Latest Stable Tag: $SELECTED_TAG"
-          fi
-          echo "tag=$SELECTED_TAG" >> $GITHUB_OUTPUT
-
       - name: Checkout sing-box
         uses: actions/checkout@v6
         with:
           repository: SagerNet/sing-box
-          ref: ${{ steps.get_tag.outputs.tag }}
+          ref: v${{ inputs.version }}
           fetch-depth: 0
 
       - name: Set up Go
@@ -68,7 +55,7 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2.3.2
         with:
-          tag_name: "sing-box_thin-BUILD_${{ env.DATE }}"
+          tag_name: "sing-box_server-BUILD_${{ env.DATE }}"
           draft: false
           prerelease: false
           files: sing-box-linux-amd64

@@ -26,9 +26,10 @@ jobs:
     outputs:
       version: ${{ steps.outputs.outputs.version }}
     steps:
-      - name: Checkout
+      - name: Checkout sing-box
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
+          repository: SagerNet/sing-box
           fetch-depth: 0
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -54,9 +55,10 @@ jobs:
     needs:
       - calculate_version
     steps:
-      - name: Checkout
+      - name: Checkout sing-box
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
+          repository: SagerNet/sing-box
           fetch-depth: 0
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -108,7 +110,6 @@ jobs:
       - name: Build
         run: |
           set -xeuo pipefail
-          cd "${{ github.workspace }}"
           mkdir -p dist
           go build -v -trimpath -o dist/sing-box -tags "${BUILD_TAGS}" \
           -ldflags '-s -buildid= -X github.com/sagernet/sing-box/constant.Version=${{ needs.calculate_version.outputs.version }} -X internal/godebug.defaultGODEBUG=multipathtcp=0 -checklinkname=0' \
@@ -187,9 +188,10 @@ jobs:
       - calculate_version
       - build
     steps:
-      - name: Checkout
+      - name: Checkout sing-box
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
+          repository: SagerNet/sing-box
           fetch-depth: 0
       - name: Set tag
         run: |-

@@ -1,152 +1,140 @@
-name: sing-box Full
+name: Build Linux x86_64 musl
 
 on:
   workflow_dispatch:
     inputs:
-      tag_name:
-        description: 'Tag to build (e.g., v1.11.0). Leave empty for latest.'
-        required: false
-        default: ''
+      version:
+        description: "Version name"
+        required: true
+        type: string
 
 jobs:
-  build:
+  calculate_version:
+    name: Calculate version
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Linux AMD64 (Static/Musl logic) - 实现 "Fused" 的最佳方案
-          - goos: linux
-            goarch: amd64
-            goamd64: v1
-            output_name: sing-box-linux-amd64-fused
-            # 强制静态链接
-            ldflags: -linkmode external -extldflags "-static -lpthread -lm -lstdc++"
-            # 对应官方 musl 逻辑，使用 standard tags + naive
-            tags: with_gvisor,with_quic,with_dhcp,with_wireguard,with_ech,with_utls,with_clash_api,with_naive_outbound
-
-          # Windows AMD64
-          - goos: windows
-            goarch: amd64
-            goamd64: v1
-            output_name: sing-box-windows-amd64-fused.exe
-            # Windows 下尝试静态链接较为复杂，这里使用 MinGW 的静态参数
-            ldflags: -linkmode external -extldflags "-static -static-libgcc -static-libstdc++"
-            tags: with_gvisor,with_quic,with_dhcp,with_wireguard,with_ech,with_utls,with_clash_api,with_naive_outbound
-
+    outputs:
+      version: ${{ steps.outputs.outputs.version }}
     steps:
-      - name: Checkout sing-box
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v5
         with:
-          repository: SagerNet/sing-box
-          ref: ${{ github.event.inputs.tag_name }}
           fetch-depth: 0
-
-      - name: Get Version & Dependency Info
-        id: info
-        run: |
-          # 确保有 tag 信息
-          git fetch --tags --force
-          
-          if [ -z "${{ github.event.inputs.tag_name }}" ]; then
-            # 如果没有输入 tag，则尝试获取最近的 tag，失败则使用 commit hash
-            VERSION=$(git describe --tags --always || git rev-parse --short HEAD)
-          else
-            VERSION="${{ github.event.inputs.tag_name }}"
-          fi
-
-          # 提取 cronet 版本
-          CRONET_VERSION=$(grep 'github.com/sagernet/cronet-go' go.mod | awk '{print $2}' | tr -d '\r\n')
-
-          # 安全写入输出
-          {
-            echo "VERSION=$VERSION"
-            echo "CRONET_VERSION=$CRONET_VERSION"
-          } >> "$GITHUB_OUTPUT"
-          
-          echo "Build Version: $VERSION"
-          echo "Cronet Version: $CRONET_VERSION"
-
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
-          check-latest: true
+          go-version: ~1.25.7
+      - name: Check input version
+        if: github.event_name == 'workflow_dispatch'
+        run: |-
+          echo "version=${{ inputs.version }}"
+          echo "version=${{ inputs.version }}" >> "$GITHUB_ENV"
+      - name: Calculate version
+        if: github.event_name != 'workflow_dispatch'
+        run: |-
+          go run -v ./cmd/internal/read_tag --ci --nightly
+      - name: Set outputs
+        id: outputs
+        run: |-
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Setup MinGW-w64 (For Windows Build)
-        if: matrix.goos == 'windows'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mingw-w64
-
-      - name: Prepare Cronet Static Libraries
-        run: |
-          mkdir -p cronet-lib
-          cd cronet-lib
-          
-          CRONET_VER="${{ steps.info.outputs.CRONET_VERSION }}"
-          OS="${{ matrix.goos }}"
-          ARCH="${{ matrix.goarch }}"
-          
-          echo "Downloading Cronet assets for $OS/$ARCH @ $CRONET_VER..."
-          
-          # 构建下载 URL (基于 SagerNet/cronet-go 的 Release 命名规则)
-          # 注意：为了实现 Fused，我们需要 Header 和 Static Lib (.a)
-          
-          # 1. 下载头文件 (Common)
-          curl -L -o include.tar.gz "https://github.com/SagerNet/cronet-go/releases/download/$CRONET_VER/cronet-linux-amd64-include.tar.gz"
-          tar -xzf include.tar.gz
-          
-          # 2. 下载静态库
-          if [ "$OS" == "linux" ]; then
-            # 下载 Linux 静态库
-            curl -L -o lib.tar.gz "https://github.com/SagerNet/cronet-go/releases/download/$CRONET_VER/cronet-linux-amd64-static.tar.gz"
-            tar -xzf lib.tar.gz
-            # 移动 .a 文件到当前目录方便引用
-            find . -name "libcronet.a" -exec mv {} . \;
-          
-          elif [ "$OS" == "windows" ]; then
-            # Windows 通常很难找到纯静态 .a/.lib，尝试下载 standard 包
-            # 注意：如果官方 release 没有提供 windows-static，这里可能会失败或只能回退到动态链接
-            curl -L -o lib.tar.gz "https://github.com/SagerNet/cronet-go/releases/download/$CRONET_VER/cronet-windows-amd64.tar.gz"
-            tar -xzf lib.tar.gz
-            # Windows 交叉编译通常需要 .syso 或 .a
-            # 尝试寻找静态库，如果找不到，后续编译可能会报错
-            find . -name "*.a" -exec mv {} . \; || true
-            find . -name "*.lib" -exec mv {} . \; || true
-          fi
-          
-          echo "Cronet setup complete. Content of lib dir:"
-          ls -R
-
-      - name: Build Binary
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          GOAMD64: ${{ matrix.goamd64 }}
-          CGO_ENABLED: 1 # 必须开启 CGO
-          TAGS: ${{ matrix.tags }}
-          VERSION: ${{ steps.info.outputs.VERSION }}
-        run: |
-          # 配置 CGO 路径
-          export CGO_CFLAGS="-I$(pwd)/cronet-lib/include"
-          export CGO_LDFLAGS="-L$(pwd)/cronet-lib"
-          
-          # 针对 Windows 设置交叉编译器
-          if [ "$GOOS" == "windows" ]; then
-            export CC="x86_64-w64-mingw32-gcc"
-            export CXX="x86_64-w64-mingw32-g++"
-          fi
-          
-          echo "Building with Tags: $TAGS"
-          
-          go build -v -tags "$TAGS" \
-            -ldflags "-X github.com/sagernet/sing-box/constant.Version=$VERSION -s -w -buildid= ${{ matrix.ldflags }}" \
-            -o ${{ matrix.output_name }} \
-            ./cmd/sing-box
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+  build:
+    name: Build Linux x86_64 musl binary
+    runs-on: ubuntu-latest
+    needs:
+      - calculate_version
+    steps:
+      - name: Checkout
+        uses: actions/checkout@5 # v5
         with:
-          name: ${{ matrix.output_name }}
-          path: ${{ matrix.output_name }}
+          fetch-depth: 0
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ~1.25.7
+      - name: Clone cronet-go
+        run: |
+          set -xeuo pipefail
+          CRONET_GO_VERSION=$(cat .github/CRONET_GO_VERSION)
+          git init ~/cronet-go
+          git -C ~/cronet-go remote add origin https://github.com/sagernet/cronet-go.git
+          git -C ~/cronet-go fetch --depth=1 origin "$CRONET_GO_VERSION"
+          git -C ~/cronet-go checkout FETCH_HEAD
+          git -C ~/cronet-go submodule update --init --recursive --depth=1
+      - name: Cache Chromium toolchain
+        id: cache-chromium-toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/cronet-go/naiveproxy/src/third_party/llvm-build/
+            ~/cronet-go/naiveproxy/src/gn/out/
+            ~/cronet-go/naiveproxy/src/chrome/build/pgo_profiles/
+            ~/cronet-go/naiveproxy/src/out/sysroot-build/
+          key: chromium-toolchain-amd64-musl-${{ hashFiles('.github/CRONET_GO_VERSION') }}
+      - name: Download Chromium toolchain
+        run: |
+          set -xeuo pipefail
+          cd ~/cronet-go
+          go run ./cmd/build-naive --target=linux/amd64 --libc=musl download-toolchain
+      - name: Set Chromium toolchain environment
+        run: |
+          set -xeuo pipefail
+          cd ~/cronet-go
+          go run ./cmd/build-naive --target=linux/amd64 --libc=musl env >> $GITHUB_ENV
+      - name: Set tag
+        run: |-
+          git ls-remote --exit-code --tags origin v${{ needs.calculate_version.outputs.version }} || echo "PUBLISHED=false" >> "$GITHUB_ENV"
+          git tag v${{ needs.calculate_version.outputs.version }} -f
+      - name: Set build tags
+        run: |
+          set -xeuo pipefail
+          TAGS='with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale,with_ccm,with_ocm,badlinkname,tfogo_checklinkname0,with_naive_outbound,with_musl'
+          echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
+      - name: Build
+        run: |
+          set -xeuo pipefail
+          mkdir -p dist
+          go build -v -trimpath -o dist/sing-box -tags "${BUILD_TAGS}" \
+          -ldflags '-s -buildid= -X github.com/sagernet/sing-box/constant.Version=${{ needs.calculate_version.outputs.version }} -X internal/godebug.defaultGODEBUG=multipathtcp=0 -checklinkname=0' \
+          ./cmd/sing-box
+        env:
+          CGO_ENABLED: "1"
+          GOOS: linux
+          GOARCH: amd64
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set mtime
+        run: |-
+          TZ=UTC touch -t '197001010000' dist/sing-box
+      - name: Set name
+        if: (! contains(needs.calculate_version.outputs.version, '-')) && !inputs.forceBeta
+        run: |-
+          echo "NAME=sing-box" >> "$GITHUB_ENV"
+      - name: Set beta name
+        if: contains(needs.calculate_version.outputs.version, '-') || inputs.forceBeta
+        run: |-
+          echo "NAME=sing-box-beta" >> "$GITHUB_ENV"
+      - name: Set version
+        run: |-
+          PKG_VERSION="${{ needs.calculate_version.outputs.version }}"
+          PKG_VERSION="${PKG_VERSION//-/\~}"
+          echo "PKG_VERSION=${PKG_VERSION}" >> "${GITHUB_ENV}"
+  upload:
+    name: Upload builds
+    runs-on: ubuntu-latest
+    needs:
+      - calculate_version
+      - build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@5
+        with:
+          fetch-depth: 0
+      - name: Set tag
+        run: |-
+          git ls-remote --exit-code --tags origin v${{ needs.calculate_version.outputs.version }} || echo "PUBLISHED=false" >> "$GITHUB_ENV"
+          git tag v${{ needs.calculate_version.outputs.version }} -f
+          echo "VERSION=${{ needs.calculate_version.outputs.version }}" >> "$GITHUB_ENV"
+      - name: Download builds
+        uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true

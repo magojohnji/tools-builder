@@ -42,16 +42,27 @@ jobs:
           cd ..
           git clone --depth 1 https://boringssl.googlesource.com/boringssl
           cd boringssl
+          
+          # 编译（确保已安装 cmake, go, g++）
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=Release ..
           make -j$(nproc)
           
+          # 自动查找库文件并建立 Nginx 期待的目录结构
           cd ..
           mkdir -p .openssl/lib
           mkdir -p .openssl/include
+          
+          # 寻找 libcrypto.a 和 libssl.a 的实际位置
+          # 有些版本在 build/，有些在 build/crypto/ 和 build/ssl/
+          find build/ -name "libcrypto.a" -exec cp {} .openssl/lib/ \;
+          find build/ -name "libssl.a" -exec cp {} .openssl/lib/ \;
+          
+          # 软链接头文件
           ln -sf $(pwd)/include/openssl .openssl/include/openssl
-          cp build/crypto/libcrypto.a .openssl/lib/
-          cp build/ssl/libssl.a .openssl/lib/
+          
+          # 验证文件是否存在（调试用）
+          ls -R .openssl/
 
       - name: Build Nginx
         run: |
@@ -65,7 +76,7 @@ jobs:
             --with-http_ssl_module \
             --with-http_v2_module \
             --with-cc-opt="-I../boringssl/include" \
-            --with-ld-opt="-L../boringssl/build/ssl -L../boringssl/build/crypto"
+            --with-ld-opt="-L../boringssl/.openssl/lib"
           make -j$(nproc)
           sudo make install
 

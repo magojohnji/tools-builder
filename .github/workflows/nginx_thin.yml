@@ -1,0 +1,108 @@
+name: NGINX (LibreSSL)
+
+on:
+  workflow_dispatch:
+    inputs:
+      nginx_version:
+        description: 'Nginx version tag (e.g., release-1.29.1). Leave empty for latest stable.'
+        required: false
+      libressl_version:
+        description: 'LibreSSL version tag (e.g., v4.2.1). Leave empty for latest stable.'
+        required: false
+
+jobs:
+  build-nginx:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get upgrade -y
+          apt-get install -y build-essential libpcre2-8-0 libpcre2-dev zlib1g zlib1g-dev libssl-dev git sudo curl aria2
+
+      - name: Download and extract Nginx source
+        run: |
+          cd ..
+          if [ -n "${{ github.event.inputs.nginx_version }}" ]; then
+            NGINX_TAG=${{ github.event.inputs.nginx_version }}
+          else
+            NGINX_TAG=$(curl -s https://api.github.com/repos/nginx/nginx/git/refs/tags | \
+              grep '"ref": "refs/tags/release-' | \
+              grep -vE 'rc|beta|alpha' | \
+              sed 's/.*refs\/tags\/\(release-[0-9.]*\).*/\1/' | \
+              sort -V | tail -n 1)
+          fi
+          echo "Using Nginx version: $NGINX_TAG"
+          
+          aria2c -x 8 -s 8 -o nginx.tar.gz https://github.com/nginx/nginx/archive/refs/tags/$NGINX_TAG.tar.gz
+          tar -xzf nginx.tar.gz
+          mv nginx-$NGINX_TAG nginx
+
+      - name: Download and extract LibreSSL source
+        run: |
+          cd ..
+          if [ -n "${{ github.event.inputs.libressl_version }}" ]; then
+            LIBRESSL_TAG=${{ github.event.inputs.libressl_version }}
+          else
+            LIBRESSL_TAG=$(curl -s https://api.github.com/repos/libressl/portable/git/refs/tags | \
+              grep '"ref": "refs/tags/v' | \
+              grep -vE 'rc|beta|alpha' | \
+              sed 's/.*refs\/tags\/\(v[0-9.]*\).*/\1/' | \
+              sort -V | tail -n 1)
+          fi
+          
+          LIBRESSL_VER=${LIBRESSL_TAG#v}
+          
+          echo "Using LibreSSL Tag: $LIBRESSL_TAG"
+          echo "Pure Version: $LIBRESSL_VER"
+          
+          aria2c -x 8 -s 8 -o libressl.tar.gz https://github.com/libressl/portable/releases/download/$LIBRESSL_TAG/libressl-$LIBRESSL_VER.tar.gz
+          
+          tar -xzf libressl.tar.gz
+          mv libressl-$LIBRESSL_VER libressl
+
+      - name: Build Nginx
+        run: |
+          cd ../nginx
+          ./auto/configure \
+            --prefix=/usr/local/nginx \
+            --with-pcre \
+            --with-file-aio \
+            --with-threads \
+            --with-http_realip_module \
+            --with-http_ssl_module \
+            --with-http_v2_module \
+            --with-openssl=../libressl \
+            --with-openssl-opt="enable-ktls" \
+            --with-cc-opt="-static -O2" \
+            --with-ld-opt="-static -Wl,--as-needed"
+          make -j$(nproc)
+          sudo make install
+
+      - name: Verify Nginx version
+        run: /usr/local/nginx/sbin/nginx -V
+
+      - name: Package Nginx binary
+        run: |
+          cd /usr/local/nginx
+          sudo tar -czvf nginx-built.tar.gz sbin/ conf/ html/ logs/
+          sudo mv nginx-built.tar.gz $GITHUB_WORKSPACE
+
+      - name: Set TAG_NAME with UTC date
+        run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: "BUILD ${{ env.DATE }}"
+          path: nginx-built.tar.gz
+
+      - name: Release
+        uses: softprops/action-gh-release@v2.3.2
+        with:
+          tag_name: "NGINX(OpenSSL)-BUILD_${{ env.DATE }}"
+          draft: false
+          prerelease: false
+          files: nginx-built.tar.gz

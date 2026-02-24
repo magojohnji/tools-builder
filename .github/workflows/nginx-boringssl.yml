@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       nginx_version:
-        description: 'Nginx 版本号 (留空表示自动获取最新稳定版，如：1.26.2)'
+        description: 'Nginx 版本号 (留空表示自动获取最新稳定版)'
         required: false
         default: ''
 
@@ -13,84 +13,66 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 检出当前仓库
+      - name: 检出仓库
         uses: actions/checkout@v4
 
-      - name: 安装依赖环境
+      - name: 安装依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build golang libpcre3-dev zlib1g-dev curl wget git
-          # 卸载系统默认的 OpenSSL 开发包，防止 Nginx 编译时误加载系统的头文件或库
           sudo apt-get remove -y libssl-dev
 
-      - name: 解析 Nginx 版本号
-        id: resolve_version
+      - name: 解析版本并准备源码
+        id: prep
         run: |
+          # 获取 Nginx 版本
           INPUT_VERSION="${{ github.event.inputs.nginx_version }}"
           if [ -z "$INPUT_VERSION" ]; then
-            echo "未提供版本号，正在从 GitHub Tags 解析最新稳定版..."
-            # Nginx 稳定版的次版本号（中间数字）永远是偶数（如 1.26.x）。这里通过正则匹配偶数次版本，并取最高版本。
             VERSION=$(git ls-remote --tags https://github.com/nginx/nginx.git | grep -oP 'refs/tags/release-\K[0-9]+\.[0-9]*[02468]\.[0-9]+' | sort -V | tail -n 1)
-            echo "解析到的最新稳定版为: $VERSION"
           else
             VERSION="$INPUT_VERSION"
-            echo "使用指定版本: $VERSION"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
+          
+          # 下载 Nginx
+          wget -qO nginx.tar.gz https://github.com/nginx/nginx/archive/refs/tags/release-$VERSION.tar.gz
+          tar -xzf nginx.tar.gz && mv nginx-release-$VERSION nginx
+          
+          # 克隆 BoringSSL
+          git clone --depth 1 https://boringssl.googlesource.com/boringssl boringssl
 
-      - name: 获取并编译 BoringSSL
+      - name: 编译 BoringSSL
         run: |
-          # BoringSSL 没有标准的 release tag，直接拉取 master
-          git clone https://boringssl.googlesource.com/boringssl boringssl
           cd boringssl
           mkdir build && cd build
-          # 使用 Ninja 编译 Release 级构建
-          cmake -GNinja -DCMAKE_BUILD_TYPE=Release ..
+          cmake -GNinja ..
           ninja
+          # 关键步骤：创建 .openssl 目录结构欺骗 Nginx
+          mkdir -p .openssl/lib && cd .openssl
+          ln -s ../../include .
+          cp ../crypto/libcrypto.a ../ssl/libssl.a lib/
 
-      - name: 从 Tag 下载 Nginx 源码
-        run: |
-          echo "正在下载 Nginx release-$VERSION ..."
-          # 直接下载对应的 Tag 源码压缩包
-          wget -qO nginx.tar.gz https://github.com/nginx/nginx/archive/refs/tags/release-${{ env.VERSION }}.tar.gz
-          tar -xzf nginx.tar.gz
-          mv nginx-release-${{ env.VERSION }} nginx
-
-      - name: 配置并编译 Nginx
+      - name: 编译 Nginx
         run: |
           cd nginx
           
-          # 动态指定 BoringSSL 的头文件和静态库路径
-          # 注意：BoringSSL 底层包含 C++ 代码，必须指定 -lstdc++，同时加入 -lpthread 防备多线程依赖报错
-          export CFLAGS="-I$(pwd)/../boringssl/include"
-          export LDFLAGS="-L$(pwd)/../boringssl/build/ssl -L$(pwd)/../boringssl/build/crypto -lstdc++ -lpthread"
+          # 告诉 Nginx 这是一个 BoringSSL 环境
+          # 我们不再使用 --with-openssl 指向源码，而是通过 CFLAGS 指向我们刚才做好的目录
           
-          # 运行配置脚本 (注：--with-http_v3_module 要求 Nginx >= 1.25.0)
           ./auto/configure \
-            --prefix=/etc/nginx \
-            --sbin-path=/usr/sbin/nginx \
-            --modules-path=/usr/lib/nginx/modules \
-            --conf-path=/etc/nginx/nginx.conf \
-            --error-log-path=/var/log/nginx/error.log \
-            --http-log-path=/var/log/nginx/access.log \
-            --pid-path=/var/run/nginx.pid \
-            --lock-path=/var/run/nginx.lock \
             --with-http_ssl_module \
             --with-http_v2_module \
             --with-http_v3_module \
+            --with-cc-opt="-I../boringssl/include" \
+            --with-ld-opt="-L../boringssl/build/ssl -L../boringssl/build/crypto -lstdc++ -lpthread" \
             --with-http_gzip_static_module \
-            --with-stream \
-            --with-stream_ssl_module \
-            --with-cc-opt="$CFLAGS" \
-            --with-ld-opt="$LDFLAGS"
+            --sbin-path=/usr/sbin/nginx \
+            --conf-path=/etc/nginx/nginx.conf
             
-          # 多核并行编译
           make -j$(nproc)
-          
-          # 裁剪生成的二进制文件，大幅减小体积
           strip objs/nginx
 
-      - name: 上传 Nginx 二进制文件
+      - name: 上传二进制
         uses: actions/upload-artifact@v4
         with:
           name: nginx-${{ env.VERSION }}-boringssl

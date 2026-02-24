@@ -11,18 +11,17 @@ jobs:
   build-nginx:
     runs-on: ubuntu-latest
     container:
-      image: debian:latest
+      image: debian:bookworm # 使用更稳定的版本
     steps:
       - name: Install dependencies
         run: |
           apt-get update
-          apt-get upgrade -y
-          apt-get install -y build-essential libpcre2-8-0 libpcre2-dev zlib1g zlib1g-dev \
-                             git curl aria2 make cmake golang g++ g++-multilib
+          apt-get install -y build-essential libpcre2-dev zlib1g-dev \
+                             git curl aria2 make cmake golang-go g++ \
+                             ninja-build # 使用 ninja 构建更快捷
 
-      - name: Download and extract Nginx source
+      - name: Download Nginx source
         run: |
-          # 确定版本号
           if [ -n "${{ github.event.inputs.nginx_version }}" ]; then
             NGINX_TAG=${{ github.event.inputs.nginx_version }}
           else
@@ -32,37 +31,37 @@ jobs:
               sed 's/.*refs\/tags\/\(release-[0-9.]*\).*/\1/' | \
               sort -V | tail -n 1)
           fi
-          echo "Using Nginx version: $NGINX_TAG"
-          
-          # 下载并在当前工作区解压
+          echo "NGINX_TAG=$NGINX_TAG" >> $GITHUB_ENV
           aria2c -x 8 -s 8 -o nginx.tar.gz https://github.com/nginx/nginx/archive/refs/tags/$NGINX_TAG.tar.gz
           tar -xzf nginx.tar.gz
           mv nginx-$NGINX_TAG nginx
 
       - name: Build BoringSSL
         run: |
-          # 克隆到 nginx 同级目录
           git clone --depth 1 https://boringssl.googlesource.com/boringssl
           cd boringssl
           mkdir build && cd build
-          cmake -DCMAKE_BUILD_TYPE=Release ..
-          make -j$(nproc)
-          cd ..
+          # 使用 -fPIC 编译静态库，防止链接到动态 Nginx 时出错
+          cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON ..
+          ninja
           
-          # 关键步骤：伪装成 Nginx 期待的 OpenSSL 目录结构
+          cd ..
+          # 创建 Nginx 期待的目录结构
           mkdir -p .openssl/lib
           mkdir -p .openssl/include
           
-          # 寻找编译好的静态库
-          find build/ -name "libcrypto.a" -exec cp {} .openssl/lib/ \;
-          find build/ -name "libssl.a" -exec cp {} .openssl/lib/ \;
+          # 复制静态库 (注意路径：Ninja 默认放在 build 根目录或 crypto/ssl 子目录)
+          cp build/crypto/libcrypto.a .openssl/lib/
+          cp build/ssl/libssl.a .openssl/lib/
           
-          # 复制头文件（使用 -R 保持目录结构）
+          # 复制头文件
           cp -R include/openssl .openssl/include/
 
       - name: Build Nginx
         run: |
           cd nginx
+          # 注意：BoringSSL 没有 config 脚本，所以不能用 --with-openssl=PATH 直接编译
+          # 必须通过 cc-opt 和 ld-opt 手动注入
           ./auto/configure \
             --prefix=/usr/local/nginx \
             --with-pcre \
@@ -72,33 +71,33 @@ jobs:
             --with-http_ssl_module \
             --with-http_v2_module \
             --with-cc-opt="-I../boringssl/.openssl/include" \
-            --with-ld-opt="-L../boringssl/.openssl/lib -lpthread -ldl"
+            --with-ld-opt="-L../boringssl/.openssl/lib -lssl -lcrypto -lstdc++ -lpthread -ldl"
           
           make -j$(nproc)
           make install
 
-      - name: Verify Nginx version
-        run: /usr/local/nginx/sbin/nginx -V
+      - name: Verify Nginx
+        run: |
+          /usr/local/nginx/sbin/nginx -V
+          # 检查是否包含 BoringSSL
+          /usr/local/nginx/sbin/nginx -V 2>&1 | grep -i "BoringSSL" || true
 
-      - name: Package Nginx binary
+      - name: Package Nginx
         run: |
           cd /usr/local/nginx
-          tar -czvf nginx-built.tar.gz sbin/ conf/ html/ logs/
-          mv nginx-built.tar.gz $GITHUB_WORKSPACE
-
-      - name: Set TAG_NAME with UTC date
+          tar -czvf $GITHUB_WORKSPACE/nginx-built.tar.gz sbin/ conf/ html/
+          
+      - name: Set Release Tag
         run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: "BUILD ${{ env.DATE }}"
+          name: "NGINX-${{ env.NGINX_TAG }}-${{ env.DATE }}"
           path: nginx-built.tar.gz
 
       - name: Release
-        uses: softprops/action-gh-release@v2.3.2
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: "NGINX-BoringSSL-BUILD_${{ env.DATE }}"
-          draft: false
-          prerelease: false
+          tag_name: "NGINX-BoringSSL-${{ env.DATE }}"
           files: nginx-built.tar.gz

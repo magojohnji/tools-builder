@@ -45,30 +45,43 @@ jobs:
         run: |
           cd boringssl
           mkdir build && cd build
-          cmake -GNinja ..
+          cmake -GNinja -DCMAKE_BUILD_TYPE=Release ..
           ninja
-          # 关键步骤：创建 .openssl 目录结构欺骗 Nginx
-          mkdir -p .openssl/lib && cd .openssl
+          
+          # 自动寻找生成的静态库并建立 Nginx 需要的目录结构
+          mkdir -p .openssl/lib
+          cd .openssl
           ln -s ../../include .
-          cp ../crypto/libcrypto.a ../ssl/libssl.a lib/
+          
+          # 使用 find 确保能找到 libcrypto.a 和 libssl.a（兼容不同构建结构）
+          find ../ -name "libcrypto.a" -exec cp {} lib/ \;
+          find ../ -name "libssl.a" -exec cp {} lib/ \;
 
       - name: 编译 Nginx
         run: |
           cd nginx
           
-          # 告诉 Nginx 这是一个 BoringSSL 环境
-          # 我们不再使用 --with-openssl 指向源码，而是通过 CFLAGS 指向我们刚才做好的目录
+          # 获取 BoringSSL 编译产物的绝对路径
+          BORINGSSL_PATH=$(pwd)/../boringssl
           
+          # 注意：通过 --with-openssl 指向我们伪装好的 .openssl 目录
+          # Nginx 的配置脚本会自动检查该目录下是否存在 include/openssl 和 lib/libssl.a
           ./auto/configure \
             --with-http_ssl_module \
             --with-http_v2_module \
             --with-http_v3_module \
-            --with-cc-opt="-I../boringssl/include" \
-            --with-ld-opt="-L../boringssl/build/ssl -L../boringssl/build/crypto -lstdc++ -lpthread" \
             --with-http_gzip_static_module \
             --sbin-path=/usr/sbin/nginx \
-            --conf-path=/etc/nginx/nginx.conf
+            --conf-path=/etc/nginx/nginx.conf \
+            --with-openssl="$BORINGSSL_PATH/build/.openssl" \
+            --with-cc-opt="-I$BORINGSSL_PATH/include" \
+            --with-ld-opt="-L$BORINGSSL_PATH/build/.openssl/lib -lstdc++ -lpthread"
             
+          # 修正 Nginx 试图在 BoringSSL 目录执行 make 的行为
+          # 因为我们已经手动编好了，所以创建一个空的 Makefile 骗过 Nginx 的校验
+          touch "$BORINGSSL_PATH/build/.openssl/Makefile"
+          touch "$BORINGSSL_PATH/build/.openssl/config"
+
           make -j$(nproc)
           strip objs/nginx
 

@@ -37,25 +37,21 @@ jobs:
           tar -xzf nginx.tar.gz
           mv nginx-$NGINX_TAG nginx
 
-      - name: Download and prepare BoringSSL
+      - name: Build BoringSSL
         run: |
           cd ..
           git clone --depth 1 https://boringssl.googlesource.com/boringssl
           cd boringssl
           mkdir build && cd build
-
-          cmake ..
+          cmake -DCMAKE_BUILD_TYPE=Release ..
           make -j$(nproc)
           
           cd ..
           mkdir -p .openssl/lib
-  
-          ln -s $(pwd)/include .openssl/include
-          
-          find build/ -name "libcrypto.a" -exec cp {} .openssl/lib/ \;
-          find build/ -name "libssl.a" -exec cp {} .openssl/lib/ \;
-          
-          ls -lh .openssl/lib/
+          mkdir -p .openssl/include
+          ln -sf $(pwd)/include/openssl .openssl/include/openssl
+          cp build/crypto/libcrypto.a .openssl/lib/
+          cp build/ssl/libssl.a .openssl/lib/
 
       - name: Build Nginx
         run: |
@@ -68,10 +64,8 @@ jobs:
             --with-http_realip_module \
             --with-http_ssl_module \
             --with-http_v2_module \
-            --with-openssl=../boringssl \
-            --with-openssl-opt="no-shared no-tests" \
             --with-cc-opt="-I../boringssl/include" \
-            --with-ld-opt="-L../boringssl/.openssl/lib"
+            --with-ld-opt="-L../boringssl/build/ssl -L../boringssl/build/crypto"
           make -j$(nproc)
           sudo make install
 

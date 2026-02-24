@@ -49,10 +49,13 @@ jobs:
           
           cd ..
           mkdir -p .openssl/lib
-          cd .openssl
-          ln -s ../include .
-          cp ../build/crypto/libcrypto.a lib/
-          cp ../build/ssl/libssl.a lib/
+  
+          ln -s $(pwd)/include .openssl/include
+          
+          find build/ -name "libcrypto.a" -exec cp {} .openssl/lib/ \;
+          find build/ -name "libssl.a" -exec cp {} .openssl/lib/ \;
+          
+          ls -lh .openssl/lib/
 
       - name: Build Nginx
         run: |

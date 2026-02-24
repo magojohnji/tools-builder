@@ -17,7 +17,7 @@ jobs:
         run: |
           apt-get update
           apt-get upgrade -y
-          apt-get install -y build-essential libpcre2-8-0 libpcre2-dev zlib1g zlib1g-dev libssl-dev git sudo curl aria2 make cmake
+          apt-get install -y build-essential libpcre2-8-0 libpcre2-dev zlib1g zlib1g-dev libssl-dev git sudo curl aria2 make cmake golang g++ g++-multilib
 
       - name: Download and extract Nginx source
         run: |
@@ -69,9 +69,9 @@ jobs:
             --with-http_ssl_module \
             --with-http_v2_module \
             --with-openssl=../boringssl \
-            --with-openssl-opt="enable-ktls" \
-            --with-cc-opt="-static -O2" \
-            --with-ld-opt="-static -Wl,--as-needed"
+            --with-openssl-opt="no-shared no-tests" \
+            --with-cc-opt="-I../boringssl/include" \
+            --with-ld-opt="-L../boringssl/.openssl/lib"
           make -j$(nproc)
           sudo make install
 

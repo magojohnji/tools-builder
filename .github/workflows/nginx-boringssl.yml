@@ -1,107 +1,78 @@
-name: NGINX (BoringSSL)
+name: Build Nginx with BoringSSL
 
 on:
+  push:
+    branches: [ "main" ]
   workflow_dispatch:
-    inputs:
-      nginx_version:
-        description: 'Nginx version tag (e.g., release-1.29.1). Leave empty for latest stable.'
-        required: false
 
 jobs:
-  build-nginx:
+  build:
     runs-on: ubuntu-latest
     container:
       image: debian:latest
     steps:
-      - name: Install dependencies
-        run: |
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: | 
           apt-get update
-          apt-get upgrade -y
-          apt-get install -y build-essential libpcre2-8-0 libpcre2-dev zlib1g zlib1g-dev libssl-dev git sudo curl aria2 make cmake golang g++ g++-multilib
+          apt-get upgrade
+          apt-get install -y sudo curl wget unzip build-essential autoconf libtool libpcre3-dev \
+                                 zlib1g-dev cmake ninja-build golang git
 
-      - name: Download and extract Nginx source
+      - name: Clone and Build BoringSSL
         run: |
-          cd ..
-          if [ -n "${{ github.event.inputs.nginx_version }}" ]; then
-            NGINX_TAG=${{ github.event.inputs.nginx_version }}
-          else
-            NGINX_TAG=$(curl -s https://api.github.com/repos/nginx/nginx/git/refs/tags | \
-              grep '"ref": "refs/tags/release-' | \
-              grep -vE 'rc|beta|alpha' | \
-              sed 's/.*refs\/tags\/\(release-[0-9.]*\).*/\1/' | \
-              sort -V | tail -n 1)
-          fi
-          echo "Using Nginx version: $NGINX_TAG"
-          
-          aria2c -x 8 -s 8 -o nginx.tar.gz https://github.com/nginx/nginx/archive/refs/tags/$NGINX_TAG.tar.gz
-          tar -xzf nginx.tar.gz
-          mv nginx-$NGINX_TAG nginx
-
-      - name: Build BoringSSL
-        run: |
-          cd ..
           git clone --depth 1 https://boringssl.googlesource.com/boringssl
           cd boringssl
-          
-          # 编译（确保已安装 cmake, go, g++）
           mkdir build && cd build
-          cmake -DCMAKE_BUILD_TYPE=Release ..
-          make -j$(nproc)
-          
-          # 自动查找库文件并建立 Nginx 期待的目录结构
-          cd ..
+          cmake -GNinja ..
+          ninja
+          # Nginx 编译脚本期望在 .openssl 目录下找到 include 和 lib
           mkdir -p .openssl/lib
-          mkdir -p .openssl/include
-          
-          # 寻找 libcrypto.a 和 libssl.a 的实际位置
-          # 有些版本在 build/，有些在 build/crypto/ 和 build/ssl/
-          find build/ -name "libcrypto.a" -exec cp {} .openssl/lib/ \;
-          find build/ -name "libssl.a" -exec cp {} .openssl/lib/ \;
-          
-          # 软链接头文件
-          ln -sf $(pwd)/include/openssl .openssl/include/openssl
-          
-          # 验证文件是否存在（调试用）
-          ls -R .openssl/
+          cp crypto/libcrypto.a ssl/libssl.a .openssl/lib/
+          cd ..
+          ln -s $(pwd)/include .openssl/include
+          echo "BORINGSSL_PATH=$(pwd)" >> $GITHUB_ENV
 
-      - name: Build Nginx
+      - name: Download Nginx
         run: |
-          cd ../nginx
-          ./auto/configure \
-            --prefix=/usr/local/nginx \
-            --with-pcre \
-            --with-file-aio \
-            --with-threads \
-            --with-http_realip_module \
+          # 你可以修改这里来选择特定版本，例如 1.27.4 (Mainline)
+          NGINX_VERSION="1.27.4"
+          curl -L http://nginx.org/download/nginx-$NGINX_VERSION.tar.gz -o nginx.tar.gz
+          tar -zxf nginx.tar.gz
+          mv nginx-$NGINX_VERSION nginx-src
+          echo "NGINX_VERSION=$NGINX_VERSION" >> $GITHUB_ENV
+
+      - name: Configure and Build Nginx
+        run: |
+          cd nginx-src
+          ./configure \
             --with-http_ssl_module \
             --with-http_v2_module \
-            --with-cc-opt="-I../boringssl/include" \
-            --with-ld-opt="-L../boringssl/.openssl/lib"
+            --with-http_v3_module \
+            --with-openssl=$BORINGSSL_PATH \
+            --with-openssl-opt="no-tests" \
+            --prefix=/etc/nginx \
+            --sbin-path=/usr/sbin/nginx \
+            --conf-path=/etc/nginx/nginx.conf
+          
+          # 注意：因为 BoringSSL 不需要 Nginx 去执行 'make'，
+          # 我们需要手动修改 Nginx 生成的 objs/Makefile 避开 OpenSSL 的构建过程
+          sed -i 's#/.openssl/include#/.openssl/include#g' objs/Makefile
+          # 这一步是为了防止 Nginx 尝试在 BoringSSL 目录运行 make
+          touch $BORINGSSL_PATH/.openssl/include/openssl/ssl.h
+          
           make -j$(nproc)
-          sudo make install
 
-      - name: Verify Nginx version
-        run: /usr/local/nginx/sbin/nginx -V
-
-      - name: Package Nginx binary
+      - name: Prepare Artifact
         run: |
-          cd /usr/local/nginx
-          sudo tar -czvf nginx-built.tar.gz sbin/ conf/ html/ logs/
-          sudo mv nginx-built.tar.gz $GITHUB_WORKSPACE
+          mkdir -p dist
+          cp nginx-src/objs/nginx dist/
+          echo "Build finished at $(date)" > dist/info.txt
 
-      - name: Set TAG_NAME with UTC date
-        run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
-
-      - name: Upload artifact
+      - name: Upload Nginx Binary
         uses: actions/upload-artifact@v4
         with:
-          name: "BUILD ${{ env.DATE }}"
-          path: nginx-built.tar.gz
-
-      - name: Release
-        uses: softprops/action-gh-release@v2.3.2
-        with:
-          tag_name: "NGINX-BoringSSL-BUILD_${{ env.DATE }}"
-          draft: false
-          prerelease: false
-          files: nginx-built.tar.gz
+          name: nginx-boringssl-${{ env.NGINX_VERSION }}
+          path: dist/nginx

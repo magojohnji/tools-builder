@@ -32,18 +32,12 @@ jobs:
           ref: ${{ inputs.nginx_version }}
           fetch-depth: 0
 
-      - name: Checkout LibreSSL
-        uses: actions/checkout@v6
-        with:
-          repository: libressl/portable
-          path: libressl
-          ref: ${{ inputs.libressl_version }}
-          fetch-depth: 0
-
-      - name: Prepare LibreSSL
+      - name: Download LibreSSL Source
         run: |
-          cd libressl
-          bash autogen.sh
+          LIBRE_VER=$(echo "${{ inputs.libressl_version }}" | sed 's/^v//')
+          curl -L "https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-${LIBRE_VER}.tar.gz" -o libressl.tar.gz
+          tar -xzf libressl.tar.gz
+          mv libressl-${LIBRE_VER} libressl
 
       - name: Build Nginx
         run: |

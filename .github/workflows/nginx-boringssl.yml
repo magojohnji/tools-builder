@@ -1,11 +1,12 @@
 name: NGINX (BoringSSL)
-
+run-name: Build NGINX (${{ inputs.nginx_version }}) with BoringSSL (main)
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Nginx version tag (e.g., release-1.29.1).'
+      nginx_version:
+        description: 'Nginx version tag (e.g., release-1.29.5).'
         required: true
+        default: 'release-1.29.5'
 
 jobs:
   build-nginx:

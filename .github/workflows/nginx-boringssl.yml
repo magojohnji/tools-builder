@@ -1,81 +1,106 @@
-name: Build Nginx with BoringSSL
+name: NGINX (BoringSSL)
 
 on:
   workflow_dispatch:
     inputs:
-      nginx_version:
-        description: 'Nginx 版本号 (留空表示自动获取最新稳定版)'
+      version:
+        description: 'Nginx version tag (e.g., release-1.29.1).'
         required: false
-        default: ''
 
 jobs:
-  build:
+  build-nginx:
     runs-on: ubuntu-latest
-
+    container:
+      image: debian:latest
     steps:
-      - name: 检出仓库
-        uses: actions/checkout@v4
-
-      - name: 安装依赖
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build golang libpcre3-dev zlib1g-dev curl wget git
-          # 必须卸载，确保链接的是 BoringSSL 而不是系统 OpenSSL
-          sudo apt-get remove -y libssl-dev
+          apt-get update
+          apt-get upgrade -y
+          apt-get install -y build-essential libpcre2-8-0 libpcre2-dev zlib1g zlib1g-dev libssl-dev git aria2 sudo curl wget make cmake golang g++ g++-multilib
 
-      - name: 解析版本并准备源码
-        id: prep
-        run: |
-          INPUT_VERSION="${{ github.event.inputs.nginx_version }}"
-          if [ -z "$INPUT_VERSION" ]; then
-            VERSION=$(git ls-remote --tags https://github.com/nginx/nginx.git | grep -oP 'refs/tags/release-\K[0-9]+\.[0-9]*[02468]\.[0-9]+' | sort -V | tail -n 1)
-          else
-            VERSION="$INPUT_VERSION"
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          
-          wget -qO nginx.tar.gz https://github.com/nginx/nginx/archive/refs/tags/release-$VERSION.tar.gz
-          tar -xzf nginx.tar.gz && mv nginx-release-$VERSION nginx
-          
-          git clone --depth 1 https://boringssl.googlesource.com/boringssl boringssl
+      - name: Checkout nginx
+        uses: actions/checkout@v6
+        with:
+          repository: nginx/nginx
+          ref: ${{ inputs.version }}
+          fetch-depth: 0
 
-      - name: 编译 BoringSSL
+      - name: Checkout BoringSSL
+        uses: actions/checkout@v6
+        with:
+          repository: google/boringssl
+          ref: main
+          fetch-depth: 0
+
+      - name: Build BoringSSL
         run: |
           cd boringssl
           mkdir build && cd build
-          cmake -GNinja -DCMAKE_BUILD_TYPE=Release ..
-          ninja
-          # 记录下绝对路径供下一步使用
-          echo "BORINGSSL_ROOT=$(realpath ..)" >> $GITHUB_ENV
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
 
-      - name: 编译 Nginx
+      - name: Build Nginx
         run: |
           cd nginx
-          
-          # 核心逻辑：
-          # 1. 不使用 --with-openssl，避免 Nginx 尝试调用 make 编译它
-          # 2. 通过 --with-cc-opt 告诉 Nginx 去哪里找头文件
-          # 3. 通过 --with-ld-opt 告诉 Nginx 链接具体的 .a 文件
-          
-          ./auto/configure \
+          ./configure \
+            --prefix=/usr/local/nginx \
+            --with-pcre \
+            --with-file-aio \
+            --with-threads \
+            --with-http_realip_module \
             --with-http_ssl_module \
             --with-http_v2_module \
-            --with-http_v3_module \
-            --with-http_gzip_static_module \
-            --sbin-path=/usr/sbin/nginx \
-            --conf-path=/etc/nginx/nginx.conf \
-            --with-cc-opt="-I${{ env.BORINGSSL_ROOT }}/include" \
-            --with-ld-opt="-L${{ env.BORINGSSL_ROOT }}/build/ssl -L${{ env.BORINGSSL_ROOT }}/build/crypto -lstdc++ -lpthread"
-            
+            --without-http_ssi_module \
+            --without-http_userid_module \
+            --without-http_access_module \
+            --without-http_auth_basic_module \
+            --without-http_mirror_module \
+            --without-http_status_module \
+            --without-http_geo_module \
+            --without-http_split_clients_module \
+            --without-http_referer_module \
+            --without-http_fastcgi_module \
+            --without-http_uwsgi_module \
+            --without-http_scgi_module \
+            --without-http_memcached_module \
+            --without-http_limit_conn_module \
+            --without-http_limit_req_module \
+            --without-http_empty_gif_module \
+            --without-http_browser_module \
+            --without-http_upstream_hash_module \
+            --without-http_upstream_ip_hash_module \
+            --without-http_upstream_least_conn_module \
+            --without-http_upstream_random_module \
+            --without-http_upstream_keepalive_module \
+            --without-http_upstream_zone_module \
+            --with-cc-opt="-Os -I../boringssl/include" \
+            --with-ld-opt="-L../boringssl/build -L../boringssl/build/crypto -lssl -lcrypto -lstdc++ -lpthread -lm -Wl,-s"
           make -j$(nproc)
-          strip objs/nginx
+          sudo make install
 
-      - name: 验证版本
+      - name: Verify Nginx version
+        run: /usr/local/nginx/sbin/nginx -V
+
+      - name: Package Nginx binary
         run: |
-          ./nginx/objs/nginx -V
+          cd /usr/local/nginx
+          sudo tar -czvf nginx-built.tar.gz sbin/ conf/ html/ logs/
+          sudo mv nginx-built.tar.gz $GITHUB_WORKSPACE
 
-      - name: 上传二进制
+      - name: Set TAG_NAME with UTC date
+        run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nginx-${{ env.VERSION }}-boringssl
-          path: nginx/objs/nginx
+          name: "BUILD_${{ env.DATE }}"
+          path: nginx-built.tar.gz
+
+      - name: Release
+        uses: softprops/action-gh-release@v2.3.2
+        with:
+          tag_name: "NGINX-BoringSSL-BUILD_${{ env.DATE }}"
+          draft: false
+          prerelease: false
+          files: nginx-built.tar.gz

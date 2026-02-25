@@ -1,14 +1,16 @@
 name: NGINX (LibreSSL)
-
+run-name: Build NGINX (${{ inputs.nginx_version }}) with LibreSSL (${{ inputs.libressl_version }})
 on:
   workflow_dispatch:
     inputs:
       nginx_version:
-        description: "Nginx version tag (e.g., release-1.29.1)."
+        description: 'Nginx version tag (e.g., release-1.29.5).'
         required: true
+        default: 'release-1.29.5'
       libressl_version:
         description: "LibreSSL version tag (e.g., v4.2.1)."
         required: true
+        default: 'v4.2.1'
 
 jobs:
   build-nginx:

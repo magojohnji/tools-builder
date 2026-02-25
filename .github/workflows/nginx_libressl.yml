@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       nginx_version:
-        description: 'Nginx version tag (e.g., release-1.29.1).'
+        description: "Nginx version tag (e.g., release-1.29.1)."
         required: true
       libressl_version:
-        description: 'LibreSSL version tag (e.g., v4.2.1).'
+        description: "LibreSSL version tag (e.g., v4.2.1)."
         required: true
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
         run: |
           apt-get update
           apt-get upgrade -y
-          apt-get install -y build-essential libpcre2-8-0 libpcre2-dev zlib1g zlib1g-dev libssl-dev git sudo curl
+          apt-get install -y build-essential libpcre2-8-0 libpcre2-dev zlib1g zlib1g-dev libssl-dev git sudo curl autoconf automake libtool
 
       - name: Checkout nginx
         uses: actions/checkout@v6
@@ -37,6 +37,11 @@ jobs:
           path: libressl
           ref: ${{ inputs.libressl_version }}
           fetch-depth: 0
+
+      - name: Prepare LibreSSL
+        run: |
+          cd libressl
+          bash autogen.sh
 
       - name: Build Nginx
         run: |
@@ -73,7 +78,6 @@ jobs:
             --without-http_upstream_keepalive_module \
             --without-http_upstream_zone_module \
             --with-openssl=../libressl \
-            --with-openssl-opt="enable-ktls" \
             --with-cc-opt="-static -O2" \
             --with-ld-opt="-static -Wl,--as-needed"
           make -j$(nproc)

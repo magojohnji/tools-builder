@@ -1,0 +1,105 @@
+name: NGINX (OpenSSL)
+
+on:
+  workflow_dispatch:
+    inputs:
+      nginx_version:
+        description: 'Nginx version tag (e.g., release-1.29.1).'
+        required: true
+      openssl_version:
+        description: 'OpenSSL version tag (e.g., openssl-3.5.2).'
+        required: true
+
+jobs:
+  build-nginx:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get upgrade -y
+          apt-get install -y build-essential libpcre2-8-0 libpcre2-dev zlib1g zlib1g-dev libssl-dev git sudo curl
+
+      - name: Checkout nginx
+        uses: actions/checkout@v6
+        with:
+          repository: nginx/nginx
+          path: nginx
+          ref: ${{ inputs.nginx_version }}
+          fetch-depth: 0
+
+      - name: Checkout OpenSSL
+        uses: actions/checkout@v6
+        with:
+          repository: openssl/openssl
+          path: openssl
+          ref: ${{ inputs.openssl_version }}
+          fetch-depth: 0
+
+      - name: Build Nginx
+        run: |
+          ./auto/configure \
+            --prefix=/usr/local/nginx \
+            --with-pcre \
+            --with-file-aio \
+            --with-threads \
+            --with-http_realip_module \
+            --with-http_ssl_module \
+            --with-http_v2_module \
+            --without-http_ssi_module \
+            --without-http_userid_module \
+            --without-http_access_module \
+            --without-http_auth_basic_module \
+            --without-http_mirror_module \
+            --without-http_status_module \
+            --without-http_geo_module \
+            --without-http_split_clients_module \
+            --without-http_referer_module \
+            --without-http_fastcgi_module \
+            --without-http_uwsgi_module \
+            --without-http_scgi_module \
+            --without-http_memcached_module \
+            --without-http_limit_conn_module \
+            --without-http_limit_req_module \
+            --without-http_empty_gif_module \
+            --without-http_browser_module \
+            --without-http_upstream_hash_module \
+            --without-http_upstream_ip_hash_module \
+            --without-http_upstream_least_conn_module \
+            --without-http_upstream_random_module \
+            --without-http_upstream_keepalive_module \
+            --without-http_upstream_zone_module \
+            --with-openssl=../libressl \
+            --with-openssl-opt="enable-ktls" \
+            --with-cc-opt="-static -O2" \
+            --with-ld-opt="-static -Wl,--as-needed"
+          make -j$(nproc)
+          sudo make install
+
+      - name: Verify Nginx version
+        run: /usr/local/nginx/sbin/nginx -V
+
+      - name: Package Nginx binary
+        run: |
+          cd /usr/local/nginx
+          sudo tar -czvf nginx-built.tar.gz sbin/ conf/ html/ logs/
+          sudo mv nginx-built.tar.gz $GITHUB_WORKSPACE
+
+      - name: Set TAG_NAME with UTC date
+        run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: "BUILD ${{ env.DATE }}"
+          path: nginx-built.tar.gz
+
+      - name: Release
+        uses: softprops/action-gh-release@v2.3.2
+        with:
+          tag_name: "NGINX-OpenSSL--BUILD_${{ env.DATE }}"
+          draft: false
+          prerelease: false
+          files: nginx-built.tar.gz

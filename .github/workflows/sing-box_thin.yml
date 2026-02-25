@@ -4,6 +4,7 @@ on:
     inputs:
       version:
         description: "Release version name, for example: 1.13.0-rc.5"
+        default: '1.13.0-rc.5'
         required: true
         type: string
 

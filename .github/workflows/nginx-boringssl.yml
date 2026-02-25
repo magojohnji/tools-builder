@@ -44,7 +44,7 @@ jobs:
       - name: Build Nginx
         run: |
           cd nginx
-          ./configure \
+          ./auto/configure \
             --prefix=/usr/local/nginx \
             --with-pcre \
             --with-file-aio \

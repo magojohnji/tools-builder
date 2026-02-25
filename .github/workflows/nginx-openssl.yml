@@ -1,14 +1,16 @@
 name: NGINX (OpenSSL)
-
+run-name: Build NGINX (${{ inputs.nginx_version }}) with OpenSSL (${{ inputs.openssl_version }})
 on:
   workflow_dispatch:
     inputs:
       nginx_version:
-        description: 'Nginx version tag (e.g., release-1.29.1).'
+        description: 'Nginx version tag (e.g., release-1.29.5).'
         required: true
+        default: 'release-1.29.5'
       openssl_version:
-        description: 'OpenSSL version tag (e.g., openssl-3.5.2).'
+        description: 'OpenSSL version tag (e.g., openssl-3.6.1).'
         required: true
+        default: 'openssl-3.6.1'
 
 jobs:
   build-nginx:
@@ -40,6 +42,7 @@ jobs:
 
       - name: Build Nginx
         run: |
+          cd nginx
           ./auto/configure \
             --prefix=/usr/local/nginx \
             --with-pcre \

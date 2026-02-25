@@ -74,7 +74,7 @@ jobs:
             --without-http_upstream_random_module \
             --without-http_upstream_keepalive_module \
             --without-http_upstream_zone_module \
-            --with-openssl=../libressl \
+            --with-openssl=../openssl \
             --with-openssl-opt="enable-ktls" \
             --with-cc-opt="-static -O2" \
             --with-ld-opt="-static -Wl,--as-needed"

@@ -55,6 +55,7 @@ jobs:
           fetch-depth: 0
 
       - name: Build Nginx
+        shell: bash
         run: |
           cd nginx
 
@@ -101,6 +102,8 @@ jobs:
           make -j$(nproc)
           sudo make install
 
+          echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
+
       - name: Verify Nginx version
         run: /usr/local/nginx/sbin/nginx -V
 
@@ -110,19 +113,17 @@ jobs:
           sudo tar -czvf nginx-built.tar.gz sbin/ conf/ html/ logs/
           sudo mv nginx-built.tar.gz $GITHUB_WORKSPACE
 
-      - name: Set TAG_NAME with UTC date
-        run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
-
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
+          archive: false
           name: "BUILD ${{ env.DATE }}"
           path: nginx-built.tar.gz
 
       - name: Release
         uses: softprops/action-gh-release@v2.3.2
         with:
-          tag_name: "NGINX-OpenSSL--BUILD_${{ env.DATE }}"
+          tag_name: "NGINX-OpenSSL-BUILD_${{ env.DATE }}"
           draft: false
           prerelease: false
           files: nginx-built.tar.gz

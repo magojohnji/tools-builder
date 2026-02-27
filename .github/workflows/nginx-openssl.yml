@@ -1,5 +1,5 @@
 name: NGINX (OpenSSL)
-run-name: Build NGINX (${{ inputs.nginx_version }}) with OpenSSL (${{ inputs.openssl_version }}) ${{ inputs.with_pcre && '(with TCP Brutal)' || '' }}
+run-name: Build NGINX (${{ inputs.nginx_version }}) with OpenSSL (${{ inputs.openssl_version }}) ${{ inputs.include_brutal && '(with TCP Brutal)' || '' }}
 on:
   workflow_dispatch:
     inputs:
@@ -46,7 +46,7 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout TCP Brutal
-        if: ${{ inputs.run_pcre_setup }}
+        if: ${{ inputs.include_brutal }}
         uses: actions/checkout@v6
         with:
           repository: xtccc/brutal-nginx

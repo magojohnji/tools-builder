@@ -1,4 +1,4 @@
-name: Caddy with NaiveProxy
+name: Caddy
 on:
   workflow_dispatch:
 defaults:
@@ -29,7 +29,12 @@ jobs:
           go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
           ~/go/bin/xcaddy build \
             --with github.com/caddyserver/forwardproxy=github.com/klzgrad/forwardproxy@naive \
-            --with github.com/caddy-dns/cloudflare
+            --with github.com/imgk/caddy-trojan \
+            --with github.com/caddy-dns/cloudflare \
+            --with github.com/WeidiDeng/caddy-cloudflare-ip \
+            --with github.com/mholt/caddy-events-exec \
+            --with github.com/mholt/caddy-l4 \
+            --with github.com/caddyserver/jsonc-adapter 
 
       - name: Pack Caddy assets
         run: |
@@ -39,6 +44,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
+          archive: false
           path: |
             sha256sum.txt
             caddy-bin.tar.gz
@@ -49,7 +55,7 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2.3.2
         with:
-          tag_name: "Caddy(naiveproxy)-BUILD_${{ env.DATE }}"
+          tag_name: "Caddy-BUILD_${{ env.DATE }}"
           draft: false
           prerelease: false
           files: |

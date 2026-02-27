@@ -51,7 +51,7 @@ jobs:
         with:
           repository: xtccc/brutal-nginx
           path: brutal
-          ref: main
+          ref: master
           fetch-depth: 0
 
       - name: Build Nginx

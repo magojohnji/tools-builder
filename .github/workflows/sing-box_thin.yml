@@ -40,7 +40,7 @@ jobs:
           TAGS="with_quic with_acme"
           
           go build -v -tags "$TAGS" \
-            -ldflags "-X github.com/sagernet/sing-box/constant.Version=$VERSION -s -w -buildid=" \
+            -ldflags "-X github.com/sagernet/sing-box/constant.Version=${{ inputs.version }} -s -w -buildid=" \
             -o sing-box-linux-amd64 \
             ./cmd/sing-box
 

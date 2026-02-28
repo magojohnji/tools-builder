@@ -1,5 +1,5 @@
 name: NGINX (BoringSSL)
-run-name: Build NGINX (${{ inputs.nginx_version }}) with BoringSSL (main)
+run-name: Build NGINX (${{ inputs.nginx_version }}) with BoringSSL (main) ${{ inputs.include_brutal && '(with TCP Brutal)' || '' }}
 on:
   workflow_dispatch:
     inputs:
@@ -7,6 +7,11 @@ on:
         description: 'Nginx version tag (e.g., release-1.29.5).'
         required: true
         default: 'release-1.29.5'
+      include_brutal:
+        description: 'Enable TCP Brutal support?'
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   build-nginx:
@@ -35,6 +40,15 @@ jobs:
           path: boringssl
           fetch-depth: 0
 
+      - name: Checkout TCP Brutal
+        if: ${{ inputs.include_brutal }}
+        uses: actions/checkout@v6
+        with:
+          repository: xtccc/brutal-nginx
+          path: brutal
+          ref: master
+          fetch-depth: 0
+
       - name: Build BoringSSL
         run: |
           cd boringssl
@@ -43,67 +57,68 @@ jobs:
           make -j$(nproc)
 
       - name: Build Nginx
+        shell: bash
         run: |
           cd nginx
-          ./auto/configure \
-            --prefix=/usr/local/nginx \
-            --with-pcre \
-            --with-file-aio \
-            --with-threads \
-            --with-http_realip_module \
-            --with-http_ssl_module \
-            --with-http_v2_module \
-            --without-http_ssi_module \
-            --without-http_userid_module \
-            --without-http_access_module \
-            --without-http_auth_basic_module \
-            --without-http_mirror_module \
-            --without-http_status_module \
-            --without-http_geo_module \
-            --without-http_split_clients_module \
-            --without-http_referer_module \
-            --without-http_fastcgi_module \
-            --without-http_uwsgi_module \
-            --without-http_scgi_module \
-            --without-http_memcached_module \
-            --without-http_limit_conn_module \
-            --without-http_limit_req_module \
-            --without-http_empty_gif_module \
-            --without-http_browser_module \
-            --without-http_upstream_hash_module \
-            --without-http_upstream_ip_hash_module \
-            --without-http_upstream_least_conn_module \
-            --without-http_upstream_random_module \
-            --without-http_upstream_keepalive_module \
-            --without-http_upstream_zone_module \
-            --with-cc-opt="-Os -I../boringssl/include" \
+
+          CONF_ARGS=(
+            --prefix=/usr/local/nginx
+            --with-file-aio
+            --with-threads
+            --with-http_realip_module
+            --with-http_ssl_module
+            --with-http_v2_module
+            --without-http_ssi_module
+            --without-http_userid_module
+            --without-http_access_module
+            --without-http_auth_basic_module
+            --without-http_mirror_module
+            --without-http_status_module
+            --without-http_geo_module
+            --without-http_split_clients_module
+            --without-http_referer_module
+            --without-http_fastcgi_module
+            --without-http_uwsgi_module
+            --without-http_scgi_module
+            --without-http_memcached_module
+            --without-http_limit_conn_module
+            --without-http_limit_req_module
+            --without-http_empty_gif_module
+            --without-http_browser_module
+            --without-http_upstream_hash_module
+            --without-http_upstream_ip_hash_module
+            --without-http_upstream_least_conn_module
+            --without-http_upstream_random_module
+            --without-http_upstream_keepalive_module
+            --without-http_upstream_zone_module
+            --with-cc-opt="-Os -I../boringssl/include"
             --with-ld-opt="-L../boringssl/build -L../boringssl/build/crypto -lssl -lcrypto -lstdc++ -lpthread -lm -Wl,-s"
+          )
+          if [ "${{ inputs.include_brutal }}" = "true" ]; then
+              CONF_ARGS+=(--add-module=../brutal)
+          fi
+
+          ./auto/configure "${CONF_ARGS[@]}"
           make -j$(nproc)
-          sudo make install
+          make install
 
-      - name: Verify Nginx version
-        run: /usr/local/nginx/sbin/nginx -V
+          /usr/local/nginx/sbin/nginx -V
+          echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
 
-      - name: Package Nginx binary
-        run: |
-          cd /usr/local/nginx
-          sudo tar -czvf nginx-built.tar.gz sbin/ conf/ html/ logs/
-          sudo mv nginx-built.tar.gz $GITHUB_WORKSPACE
-
-      - name: Set TAG_NAME with UTC date
-        run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
+      - name: Package Nginx folder
+        run: tar -czvf nginx-built.tar.gz -C /usr/local --exclude='nginx/logs/*' nginx
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: "BUILD_${{ env.DATE }}"
-          path: nginx-built.tar.gz
           archive: false
+          name: "NGINX-BoringSSL_${{ env.DATE }}${{ inputs.include_brutal && '-Brutal' || '' }}"
+          path: nginx-built.tar.gz
 
       - name: Release
         uses: softprops/action-gh-release@v2.3.2
         with:
-          tag_name: "NGINX-BoringSSL-BUILD_${{ env.DATE }}"
+          tag_name: "NGINX-BoringSSL_${{ env.DATE }}${{ inputs.include_brutal && '-Brutal' || '' }}"
           draft: false
           prerelease: false
           files: nginx-built.tar.gz

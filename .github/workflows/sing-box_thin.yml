@@ -44,15 +44,15 @@ jobs:
             -o sing-box-linux-amd64 \
             ./cmd/sing-box
 
+          echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
+
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
+          archive: false
           name: sing-box-${{ steps.get_tag.outputs.tag }}-linux-amd64
           path: sing-box-linux-amd64
 
-      - name: Set TAG_NAME with UTC date
-        run: echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
-          
       - name: Release
         uses: softprops/action-gh-release@v2.3.2
         with:
